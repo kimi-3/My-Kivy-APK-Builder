@@ -48,9 +48,9 @@ jobs:
     - name: Install Buildozer and dependencies
       run: |
         python -m pip install --upgrade pip
-        # 1. 固定版本（和buildozer.spec匹配），新增paho-mqtt
-        pip install buildozer cython==0.29.33 kivy==2.2.1 kivymd==1.2.0 paho-mqtt
-        pip install python-for-android  # 必须依赖
+        # 关键修正1：新增setuptools（构建必需），固定buildozer版本
+        pip install buildozer==1.5.0 cython==0.29.33 kivy==2.2.1 kivymd==1.2.0 paho-mqtt pyjnius setuptools
+        pip install python-for-android==2023.2.10  # 关键修正2：固定p4a版本，避免兼容问题
 
     - name: Clean old build cache（关键：清理旧缓存）
       run: |
@@ -65,14 +65,14 @@ jobs:
         python --version
         buildozer --version
         
-        # 2. 修正环境变量拼写错误
+        # 修正环境变量拼写错误
         export BUILDOZER_ALLOW_PLATFORM_EXEC=1
         export USE_COLORS=0
         
-        # 3. 强制生成APK（匹配buildozer.spec的android.aab=False）
+        # 强制生成APK（匹配buildozer.spec的android.aab=False）
         buildozer -v android debug --set android.aab false 2>&1 | tee buildozer.log
         
-        # 4. 查找APK并复制到bin目录（统一路径）
+        # 查找APK并复制到bin目录（统一路径）
         echo "=== 查找APK文件 ==="
         find . -name "*.apk" -type f
         find . -name "*.apk" -exec cp -f {} bin/ \; 2>/dev/null || echo "未找到APK文件"
