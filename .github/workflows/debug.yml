@@ -6,7 +6,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # 延长超时到60分钟，足够完成构建
+    timeout-minutes: 60  # 延长超时到60分钟，确保构建完成
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
@@ -15,6 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 核心修复：补充Kivy编译必需的所有系统依赖
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -23,10 +24,16 @@ jobs:
               python3-pip autoconf automake libtool \
               pkg-config zlib1g-dev libncurses5-dev \
               libncursesw5-dev cmake libffi-dev libssl-dev \
-              curl unzip openjdk-17-jdk libltdl-dev
+              curl unzip openjdk-17-jdk libltdl-dev \
+              # Kivy编译必需的图形/系统库（新增核心依赖）
+              libgl1-mesa-dev libgles2-mesa-dev \
+              libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+              libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
+              libjpeg-dev libpng-dev libtiff-dev libx11-dev libxcursor-dev \
+              libxinerama-dev libxrandr-dev libxss-dev libxxf86vm-dev
           sudo apt-get clean
 
-      # 关键：自动同意所有Android SDK许可，跳过交互
+      # 自动同意Android SDK许可，跳过交互卡点
       - name: Auto accept Android SDK licenses
         run: |
           mkdir -p $ANDROID_HOME/licenses
@@ -37,15 +44,16 @@ jobs:
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
           cp $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/
 
-      # 关键：安装兼容版本的依赖，避免版本冲突
+      # 核心修复：强制安装二进制包，避免Kivy本地编译失败
       - name: Install Buildozer and dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          pip install buildozer==1.5.0 cython==0.29.33 \
+          # --only-binary 强制使用预编译包，跳过gcc编译
+          pip install --only-binary ":all:" buildozer==1.5.0 cython==0.29.33 \
             kivy==2.2.1 kivymd==1.2.0 paho-mqtt pyjnius \
             python-for-android==2023.2.10
 
-      # 关键：缓存Buildozer依赖，避免重复下载SDK/NDK
+      # 缓存依赖，避免重复下载SDK/NDK
       - name: Cache Buildozer dependencies
         uses: actions/cache@v3
         with:
@@ -56,7 +64,7 @@ jobs:
           restore-keys: |
             buildozer-
 
-      # 关键：构建APK，输出详细日志，指定兼容版本
+      # 构建APK，输出详细日志
       - name: Build APK with Buildozer (Debug Mode)
         run: |
           export PATH="$HOME/.local/bin:$PATH"
