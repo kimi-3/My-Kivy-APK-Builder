@@ -1,48 +1,48 @@
 [app]
-title = Esp32MobileApp          
-package.name = esp32app         
-package.domain = org.esp32     
-source.dir = .                 
-source.include_exts = py,png,jpg,kv,atlas,pem  
-version = 0.0.1                 
-fullscreen = 0                 
-orientation = portrait          
+# (必填) 应用名称
+title = Esp32App
+# (必填) 包名（小写，无空格）
+package.name = esp32app
+# (必填) 包域名（自定义）
+package.domain = org.test
+# (必填) 源码目录（当前目录）
+source.dir = .
+# (必填) 包含的文件后缀
+source.include_exts = py,png,jpg,kv,atlas
+# 版本号
+version = 0.1
 
-requirements = python3,kivy==2.2.1,kivymd==1.2.0,paho-mqtt,pyjnius,libiconv,libffi
-
-entrypoint = main.py
-
-android.accept_sdk_license = True
-android.allow_api_min = 21
+# 安卓配置
+[android]
+# 兼容的NDK版本（和workflow一致）
+android.ndk = 25b
+android.ndk_api = 21
+# 安卓API版本（和workflow一致）
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
-android.sdk = 33
-android.ndk_api = 21
-exclude_patterns = **/test/*, **/tests/*
-android.gradle_download = https://services.gradle.org/distributions/gradle-7.6.4-all.zip
-android.gradle_plugin = 7.4.2
-p4a.gradle_dependencies = gradle:7.6.4
-p4a.bootstrap = sdl2
-p4a.gradle_options = -Dorg.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64
-
-android.permissions = INTERNET, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE
-
+# 稳定版Build Tools（避免预览版许可问题）
+android.build_tools = 33.0.2
+# 强制生成APK（禁用AAB）
 android.aab = False
+# 应用权限（根据需求添加，比如网络权限）
+android.permissions = INTERNET,ACCESS_WIFI_STATE,CHANGE_WIFI_STATE
+# (必填) 依赖列表（和workflow安装的版本一致）
+requirements = python3,kivy==2.2.1,kivymd==1.2.0,paho-mqtt,pyjnius
+# 架构（适配大多数安卓设备）
+android.archs = arm64-v8a,armeabi-v7a
+# 禁用签名（Debug模式无需签名）
+android.release = False
+# 简化gradle配置，减少兼容问题
+android.gradle_download = https://services.gradle.org/distributions/gradle-7.4.1-all.zip
+android.gradle_plugin = 7.2.0
 
-android.arch = arm64-v8a,armeabi-v7a
-
-# 修正：删除开头的中文括号）
-android.add_assets = ca.pem
-
-android.blacklist_libs = libpython3.9.so
-
-# 5. Release模式配置（暂时注释，调试阶段不用）
-# android.keystore = /home/runner/work/RepositoryName/AndAgain/DomainName.PackageName.keystore
-# android.keystore_storepass = android
-# android.keystore_keypass = android
-# android.keystore_alias = DomainName.PackageName
-
+# 通用配置
 [buildozer]
-log_level = 2                   
-warn_on_root = 1  
+# 日志级别（详细）
+log_level = 2
+# 构建目录
+build_dir = ./.buildozer
+# 缓存目录
+cache_dir = ~/.buildozer
+# 忽略的文件
+ignore_patterns = *.pyc,__pycache__,*.kv.orig,*.swp
