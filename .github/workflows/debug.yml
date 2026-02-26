@@ -6,7 +6,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # 延长超时到60分钟，确保构建完成
+    timeout-minutes: 60  # 延长超时到60分钟
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
@@ -15,45 +15,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 核心修复：补充Kivy编译必需的所有系统依赖
+      # 核心修复：修正依赖包名 + 确保sudo权限 + 分命令执行避免换行错误
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-              git zip unzip ant \
-              python3-pip autoconf automake libtool \
-              pkg-config zlib1g-dev libncurses5-dev \
-              libncursesw5-dev cmake libffi-dev libssl-dev \
-              curl unzip openjdk-17-jdk libltdl-dev \
-              # Kivy编译必需的图形/系统库（新增核心依赖）
-              libgl1-mesa-dev libgles2-mesa-dev \
-              libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
-              libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev \
-              libjpeg-dev libpng-dev libtiff-dev libx11-dev libxcursor-dev \
-              libxinerama-dev libxrandr-dev libxss-dev libxxf86vm-dev
+          sudo apt-get update -y
+          # 基础依赖
+          sudo apt-get install -y git zip unzip ant python3-pip autoconf automake libtool
+          # 编译工具依赖
+          sudo apt-get install -y pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev
+          # JDK和基础工具
+          sudo apt-get install -y curl unzip openjdk-17-jdk libltdl-dev
+          # Kivy编译必需的图形/系统库（修正Ubuntu 24.04兼容的包名）
+          sudo apt-get install -y libgl1-mesa-dev libgles2-mesa-dev
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+          sudo apt-get install -y libportmidi-dev libswscale-dev libavformat-dev libavcodec-dev
+          sudo apt-get install -y libjpeg-dev libpng-dev libtiff-dev libx11-dev libxcursor-dev
+          sudo apt-get install -y libxinerama-dev libxrandr-dev libxss-dev libxxf86vm-dev
           sudo apt-get clean
 
-      # 自动同意Android SDK许可，跳过交互卡点
+      # 自动同意Android SDK许可
       - name: Auto accept Android SDK licenses
         run: |
           mkdir -p $ANDROID_HOME/licenses
           echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-preview-license
           echo "d975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_HOME/licenses/intel-android-extra-license
-          # 同步到Buildozer的SDK目录（兜底）
           mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
           cp $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/
 
-      # 核心修复：强制安装二进制包，避免Kivy本地编译失败
+      # 强制安装二进制包，避免Kivy编译
       - name: Install Buildozer and dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # --only-binary 强制使用预编译包，跳过gcc编译
           pip install --only-binary ":all:" buildozer==1.5.0 cython==0.29.33 \
             kivy==2.2.1 kivymd==1.2.0 paho-mqtt pyjnius \
             python-for-android==2023.2.10
 
-      # 缓存依赖，避免重复下载SDK/NDK
+      # 缓存依赖
       - name: Cache Buildozer dependencies
         uses: actions/cache@v3
         with:
@@ -64,27 +62,24 @@ jobs:
           restore-keys: |
             buildozer-
 
-      # 构建APK，输出详细日志
+      # 构建APK
       - name: Build APK with Buildozer (Debug Mode)
         run: |
           export PATH="$HOME/.local/bin:$PATH"
-          # 强制指定兼容的安卓工具链版本
           export P4A_BUILD_TOOLS_VERSION=33.0.2
           export P4A_ANDROID_API=33
           export P4A_MINSDK=21
           export P4A_NDK_VERSION=25b
           export BUILDOZER_ALLOW_PLATFORM_EXEC=1
           
-          # 清理旧缓存 + 详细日志构建（log_level=2暴露所有错误）
           buildozer android clean
           buildozer -v android debug --log-level=2 2>&1 | tee buildozer.log
           
-          # 确保APK复制到bin目录（方便上传）
           mkdir -p bin
           find . -name "*.apk" -exec cp -f {} bin/ \; 2>/dev/null || echo "未找到APK文件"
-          ls -la bin/  # 打印bin目录内容，确认是否有APK
+          ls -la bin/
 
-      # 上传产物（日志+APK）
+      # 上传产物
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -92,5 +87,5 @@ jobs:
           path: |
             bin/
             buildozer.log
-            ./.buildozer/android/platform/build-armeabi-v7a/dists/*/*.apk  # 兜底：直接指向APK生成路径
-          if-no-files-found: warn  # 没找到文件时仅警告，不中断
+            ./.buildozer/android/platform/build-armeabi-v7a/dists/*/*.apk
+          if-no-files-found: warn
