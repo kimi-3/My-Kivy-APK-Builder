@@ -1,109 +1,88 @@
 name: Build Kivy Android APK In Debug Mode
 
 on:
-  workflow_dispatch:
-
-permissions:
-  contents: write
-  actions: read
-  checks: read
-
-env:
-  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-  ANDROID_HOME: /usr/local/lib/android/sdk
-  JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
-  CYTHON_LANGUAGE_LEVEL: "3"
-  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.java-home=$JAVA_HOME -Dorg.gradle.jvmargs=-Xmx2048m"
+  workflow_dispatch:  # 手动触发构建
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 60  # 延长超时到60分钟，足够完成构建
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Java 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              git zip unzip ant \
+              python3-pip autoconf automake libtool \
+              pkg-config zlib1g-dev libncurses5-dev \
+              libncursesw5-dev cmake libffi-dev libssl-dev \
+              curl unzip openjdk-17-jdk libltdl-dev
+          sudo apt-get clean
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'  # 适配cython 0.29.33
+      # 关键：自动同意所有Android SDK许可，跳过交互
+      - name: Auto accept Android SDK licenses
+        run: |
+          mkdir -p $ANDROID_HOME/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
+          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-preview-license
+          echo "d975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_HOME/licenses/intel-android-extra-license
+          # 同步到Buildozer的SDK目录（兜底）
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          cp $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-            git zip unzip \
-            python3-pip autoconf automake libtool \
-            pkg-config zlib1g-dev libncurses5-dev \
-            libncursesw5-dev cmake libffi-dev libssl-dev \
-            curl unzip openjdk-17-jdk libltdl-dev
-        sudo apt-get clean  # 清理缓存，减少空间占用
+      # 关键：安装兼容版本的依赖，避免版本冲突
+      - name: Install Buildozer and dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install buildozer==1.5.0 cython==0.29.33 \
+            kivy==2.2.1 kivymd==1.2.0 paho-mqtt pyjnius \
+            python-for-android==2023.2.10
 
-    - name: Install Buildozer and dependencies
-      run: |
-        python -m pip install --upgrade pip
-        # 关键修正1：新增setuptools（构建必需），固定buildozer版本
-        pip install buildozer==1.5.0 cython==0.29.33 kivy==2.2.1 kivymd==1.2.0 paho-mqtt pyjnius setuptools
-        pip install python-for-android==2023.2.10  # 关键修正2：固定p4a版本，避免兼容问题
+      # 关键：缓存Buildozer依赖，避免重复下载SDK/NDK
+      - name: Cache Buildozer dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.buildozer
+            ./.buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-
 
-    - name: Clean old build cache（关键：清理旧缓存）
-      run: |
-        rm -rf .buildozer/ bin/ buildozer.log
-        mkdir -p bin  # 确保bin目录存在
+      # 关键：构建APK，输出详细日志，指定兼容版本
+      - name: Build APK with Buildozer (Debug Mode)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          # 强制指定兼容的安卓工具链版本
+          export P4A_BUILD_TOOLS_VERSION=33.0.2
+          export P4A_ANDROID_API=33
+          export P4A_MINSDK=21
+          export P4A_NDK_VERSION=25b
+          export BUILDOZER_ALLOW_PLATFORM_EXEC=1
+          
+          # 清理旧缓存 + 详细日志构建（log_level=2暴露所有错误）
+          buildozer android clean
+          buildozer -v android debug --log-level=2 2>&1 | tee buildozer.log
+          
+          # 确保APK复制到bin目录（方便上传）
+          mkdir -p bin
+          find . -name "*.apk" -exec cp -f {} bin/ \; 2>/dev/null || echo "未找到APK文件"
+          ls -la bin/  # 打印bin目录内容，确认是否有APK
 
-    - name: Build APK with Buildozer
-      run: |
-        export PATH="$HOME/.local/bin:$PATH"
-        echo "=== 环境检查 ==="
-        java -version
-        python --version
-        buildozer --version
-        
-        # 修正环境变量拼写错误
-        export BUILDOZER_ALLOW_PLATFORM_EXEC=1
-        export USE_COLORS=0
-        
-        # 强制生成APK（匹配buildozer.spec的android.aab=False）
-        buildozer -v android debug --set android.aab false 2>&1 | tee buildozer.log
-        
-        # 查找APK并复制到bin目录（统一路径）
-        echo "=== 查找APK文件 ==="
-        find . -name "*.apk" -type f
-        find . -name "*.apk" -exec cp -f {} bin/ \; 2>/dev/null || echo "未找到APK文件"
-
-    - name: Check if APK was built
-      id: check-build
-      run: |
-        # 检查bin目录下的APK
-        if ls bin/*.apk 1> /dev/null 2>&1; then
-          echo "BUILD_FINAL_SUCCESS=true" >> $GITHUB_OUTPUT
-          echo "=== 找到APK文件 ==="
-          ls -la bin/*.apk
-        else
-          echo "BUILD_FINAL_SUCCESS=false" >> $GITHUB_OUTPUT
-          echo "=== 未找到APK文件，打印错误日志 ==="
-          cat buildozer.log | grep -i "error\|failed\|traceback" | tail -50
-        fi
-
-    - name: Upload APK artifact
-      if: steps.check-build.outputs.BUILD_FINAL_SUCCESS == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: kivy-app-apk
-        path: bin/*.apk  # 路径统一，能找到文件
-        retention-days: 30
-
-    - name: Upload build logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-logs
-        path: |
-          buildozer.log
-        retention-days: 7
+      # 上传产物（日志+APK）
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-and-apk
+          path: |
+            bin/
+            buildozer.log
+            ./.buildozer/android/platform/build-armeabi-v7a/dists/*/*.apk  # 兜底：直接指向APK生成路径
+          if-no-files-found: warn  # 没找到文件时仅警告，不中断
